@@ -1,7 +1,9 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 use std::io::{self, Read, Write};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::sync::{Arc, RwLock};
 
@@ -14,7 +16,7 @@ pub trait SwarmService {
 pub struct DhtService {
     local_id: u16,
     seed_addr: Option<SocketAddr>,
-    nodes: Arc<RwLock<HashMap<u16, SocketAddr>>>,
+    nodes: Arc<RwLock<BTreeMap<u16, SocketAddr>>>,
     tokens: Arc<RwLock<BTreeMap<u64, u16>>>,
 }
 
@@ -23,9 +25,30 @@ impl DhtService {
         DhtService {
             local_id: local_id,
             seed_addr: seed_addr,
-            nodes: Arc::new(RwLock::new(HashMap::new())),
+            nodes: Arc::new(RwLock::new(BTreeMap::new())),
             tokens: Arc::new(RwLock::new(BTreeMap::new())),
         }
+    }
+
+    fn hash_nodes(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        let nodes = self.nodes.read().unwrap();
+        for key in nodes.keys() {
+            hasher.write_u16(*key);
+        }
+
+        hasher.finish()
+    }
+
+    fn hash_tokens(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        let tokens = self.tokens.read().unwrap();
+        for (token, id) in tokens.iter() {
+            hasher.write_u64(*token);
+            hasher.write_u16(*id);
+        }
+
+        hasher.finish()
     }
 }
 
@@ -64,24 +87,74 @@ impl SwarmService for DhtService {
         // send request - node_id, socket_addr, nodes_hash, tokens_hash
         write_node(&mut stream, self.local_id, local_addr)?;
 
-        // TODO - send nodes hash
-        // TODO - send tokens hash
+        // process node updates
+        stream.write_u64::<BigEndian>(self.hash_nodes())?;
+        {
+            let node_updates = stream.read_u16::<BigEndian>()?;
+            let mut nodes = self.nodes.write().unwrap();
+            for _ in 0..node_updates {
+                let (id, socket_addr) = read_node(&mut stream)?;
+                if !nodes.contains_key(&id) {
+                    nodes.insert(id, socket_addr);
+                }
+            }
+        }
 
-        unimplemented!();
+        // process token updates
+        stream.write_u64::<BigEndian>(self.hash_tokens())?;
+        {
+            let token_updates = stream.read_u16::<BigEndian>()?;
+            let mut tokens = self.tokens.write().unwrap();
+            for _ in 0..token_updates {
+                let token = stream.read_u64::<BigEndian>()?;
+                let id = stream.read_u16::<BigEndian>()?;
+                if !tokens.contains_key(&token) {
+                    tokens.insert(token, id);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn process(&self, stream: &mut TcpStream) -> Result<(), io::Error> {
         // read request - node_id, socket_addr, nodes_hash, tokens_hash
         let (id, socket_addr) = read_node(stream)?;
 
-        println!("{} - {}", id, socket_addr);
+        // write node updates
+        let node_hash = stream.read_u64::<BigEndian>()?;
+        if node_hash != self.hash_nodes() {
+            let nodes = self.nodes.read().unwrap();
+            stream.write_u16::<BigEndian>(nodes.len() as u16)?;
+            for (id, socket_addr) in nodes.iter() {
+                write_node(stream, *id, socket_addr)?;
+            }
+        } else {
+            stream.write_u16::<BigEndian>(0)?;
+        }
 
-        // TODO - read nodes hash
-        // TODO - read tokens hash
-
-        // TODO - write gossip response
+        // write token updates
+        let token_hash = stream.read_u64::<BigEndian>()?;
+        if token_hash != self.hash_tokens() {
+            let tokens = self.tokens.read().unwrap();
+            stream.write_u16::<BigEndian>(tokens.len() as u16)?;
+            for (token, id) in tokens.iter() {
+                stream.write_u64::<BigEndian>(*token)?;
+                stream.write_u16::<BigEndian>(*id)?;
+            }
+        } else {
+            stream.write_u16::<BigEndian>(0)?;
+        }
  
-        unimplemented!();
+        {
+            // add gossiping node to nodes if does not exist
+            let mut nodes = self.nodes.write().unwrap();
+            if !nodes.contains_key(&id) {
+                nodes.insert(id, socket_addr);
+            }
+        }
+
+        Ok(())
     }
 }
 
