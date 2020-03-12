@@ -2,7 +2,7 @@ use crate::prelude::{SwarmService, SwarmServer};
 
 use std::io;
 use std::net::TcpListener;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -23,7 +23,7 @@ impl ThreadPoolServer {
 
 impl SwarmServer for ThreadPoolServer {
     fn start<T: 'static + SwarmService + Send + Sync>(&self,
-            listener: TcpListener, service: Arc<T>, shutdown: Arc<AtomicBool>,
+            listener: TcpListener, service: Arc<RwLock<T>>, shutdown: Arc<AtomicBool>,
             join_handles: &mut Vec<JoinHandle<()>>)  -> Result<(), io::Error> {
         for _ in 0..self.thread_count {
             // clone variables
@@ -39,7 +39,8 @@ impl SwarmServer for ThreadPoolServer {
                     match result {
                         Ok(mut stream) => {
                             // handle connection
-                            match service_clone.process(&mut stream) {
+                            let mut service = service_clone.write().unwrap();
+                            match service.process(&mut stream) {
                                 Err(ref e) if e.kind() != std::io
                                         ::ErrorKind::UnexpectedEof => {
                                     error!("failed to process stream {}", e);
@@ -79,25 +80,23 @@ mod tests {
     use std::io;
     use std::net::{SocketAddr, TcpStream};
     
-    use crate::service::SwarmService;
+    use crate::prelude::SwarmService;
 
     struct NullService {
     }
 
     impl SwarmService for NullService {
-        fn gossip(&self, _: &SocketAddr) -> Result<(), io::Error> {
-            Ok(())
-        }
-
-        fn process(&self, _: &mut TcpStream) -> Result<(), io::Error> {
-            Ok(())
-        }
+        fn gossip(&mut self) -> Result<(), io::Error> { Ok(()) }
+        fn initialize(&mut self, _: &SocketAddr)
+            -> Result<(), io::Error> { Ok(()) }
+        fn process(&mut self, _: &mut TcpStream)
+            -> Result<(), io::Error> { Ok(()) }
     }
 
     #[test]
     fn cycle_thread_pool_server() {
         use std::net::TcpListener;
-        use std::sync::Arc;
+        use std::sync::{Arc, RwLock};
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread::JoinHandle;
         use super::{SwarmServer, ThreadPoolServer};
@@ -114,7 +113,7 @@ mod tests {
         let thread_pool_server = ThreadPoolServer::new(4, 50);
 
         // initialize NullService
-        let service = Arc::new(NullService{});
+        let service = Arc::new(RwLock::new(NullService{}));
 
         // start server
         thread_pool_server.start(listener, service, shutdown.clone(),

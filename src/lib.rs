@@ -8,13 +8,13 @@ mod service;
 
 use std::io::{self};
 use std::net::{SocketAddr, TcpListener};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 pub struct Swarm {
-    address: SocketAddr,
+    addr: SocketAddr,
     join_handles: Vec<JoinHandle<()>>,
     gossip_interval_ms: u64,
     listener: TcpListener,
@@ -22,27 +22,32 @@ pub struct Swarm {
 }
 
 impl Swarm {
-    pub fn bind(address: SocketAddr) -> Result<Swarm, io::Error> {
+    pub fn bind(addr: SocketAddr) -> Result<Swarm, io::Error> {
         Ok ( 
             Swarm {
-                address: address,
+                addr: addr,
                 join_handles: Vec::new(),
-                gossip_interval_ms: 2000, // TODO - parameterize
-                listener: TcpListener::bind(address)?,
+                gossip_interval_ms: 2000,
+                listener: TcpListener::bind(addr)?,
                 shutdown: Arc::new(AtomicBool::new(true)),
             }
         )
     }
 
     pub fn start<T: 'static + SwarmService + Send + Sync,
-            U: SwarmServer>(&mut self, service: Arc<T>,
+            U: SwarmServer>(&mut self, service: Arc<RwLock<T>>,
             server: U) -> Result<(), io::Error> {
         // start local swarm server
         server.start(self.listener.try_clone()?, service.clone(),
             self.shutdown.clone(), &mut self.join_handles)?;
 
+        {
+            // initialize service
+            let mut service = service.write().unwrap();
+            service.initialize(&self.addr)?;
+        }
+
         // start gossip thread for swarm service
-        let address_clone = self.address.clone();
         let shutdown_clone = self.shutdown.clone();
         let gossip_interval_duration =
             Duration::from_millis(self.gossip_interval_ms);
@@ -51,8 +56,11 @@ impl Swarm {
                 let instant = Instant::now();
 
                 // gossip call
-                if let Err(e) = service.gossip(&address_clone) {
-                    error!("gossip: {}", e);
+                {
+                    let mut service = service.write().unwrap();
+                    if let Err(e) = service.gossip() {
+                        error!("gossip: {}", e);
+                    }
                 }
 
                 // check if shutdown
@@ -96,18 +104,20 @@ mod tests {
     #[test]
     fn cycle_swarm() {
         use std::net::{IpAddr, SocketAddr};
-        use std::sync::Arc;
+        use std::sync::{Arc, RwLock};
         use crate::prelude::{DhtService, Swarm, ThreadPoolServer};
  
+        // initialize swarm server and service
+        let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
+        let server = ThreadPoolServer::new(4, 50);
+
         // bind swarm to tcp socket
         let ip_addr: IpAddr = "127.0.0.1".parse().expect("parse IpAddr");
         let socket_addr = SocketAddr::new(ip_addr, 15605);
         let mut swarm = Swarm::bind(socket_addr).expect("swarm bind");
 
         // start swarm
-        let dht_service = Arc::new(DhtService::new(0, None));
-        let thread_pool_server = ThreadPoolServer::new(4, 50);
-        swarm.start(dht_service, thread_pool_server).expect("swarm start");
+        swarm.start(service, server).expect("swarm start");
 
         // stop swarm
         swarm.stop().expect("swarm stop");

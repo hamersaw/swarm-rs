@@ -4,7 +4,7 @@ use std::io;
 use std::net::{SocketAddr, TcpStream};
 
 pub trait SwarmService {
-    fn gossip(&self, local_address: &SocketAddr) -> Result<(), io::Error>;
-
-    fn process(&self, stream: &mut TcpStream) -> Result<(), io::Error>;
+    fn gossip(&mut self) -> Result<(), io::Error>;
+    fn initialize(&mut self, local_addr: &SocketAddr) -> Result<(), io::Error>;
+    fn process(&mut self, stream: &mut TcpStream) -> Result<(), io::Error>;
 }
