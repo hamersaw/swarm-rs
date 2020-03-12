@@ -7,7 +7,7 @@ use prelude::{SwarmServer, SwarmService};
 mod service;
 
 use std::io::{self};
-use std::net::{SocketAddr, TcpListener};
+use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -22,7 +22,14 @@ pub struct Swarm {
 }
 
 impl Swarm {
-    pub fn bind(addr: SocketAddr) -> Result<Swarm, io::Error> {
+    pub fn bind<T: ToSocketAddrs>(addr: T) -> Result<Swarm, io::Error> {
+        let mut addr_iter = addr.to_socket_addrs()?;
+        let addr = match addr_iter.next() {
+            Some(addr) => addr,
+            None => return Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable, "invalid bind address")),
+        };
+
         Ok ( 
             Swarm {
                 addr: addr,
@@ -103,20 +110,15 @@ impl Swarm {
 mod tests {
     #[test]
     fn cycle_swarm() {
-        use std::net::{IpAddr, SocketAddr};
         use std::sync::{Arc, RwLock};
         use crate::prelude::{DhtService, Swarm, ThreadPoolServer};
  
-        // initialize swarm server and service
-        let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
-        let server = ThreadPoolServer::new(4, 50);
-
         // bind swarm to tcp socket
-        let ip_addr: IpAddr = "127.0.0.1".parse().expect("parse IpAddr");
-        let socket_addr = SocketAddr::new(ip_addr, 15605);
-        let mut swarm = Swarm::bind(socket_addr).expect("swarm bind");
+        let mut swarm = Swarm::bind("127.0.0.1:15605").expect("swarm bind");
 
         // start swarm
+        let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
+        let server = ThreadPoolServer::new(4, 50);
         swarm.start(service, server).expect("swarm start");
 
         // stop swarm
