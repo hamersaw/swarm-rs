@@ -41,6 +41,10 @@ impl Swarm {
         )
     }
 
+    pub fn set_gossip_interval_ms(&mut self, gossip_interval_ms: u64) {
+        self.gossip_interval_ms = gossip_interval_ms;
+    }
+
     pub fn start<T: 'static + SwarmService + Send + Sync,
             U: SwarmServer>(&mut self, service: Arc<RwLock<T>>,
             server: U) -> Result<(), io::Error> {
@@ -115,6 +119,7 @@ mod tests {
  
         // bind swarm to tcp socket
         let mut swarm = Swarm::bind("127.0.0.1:15605").expect("swarm bind");
+        swarm.set_gossip_interval_ms(500);
 
         // start swarm
         let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
