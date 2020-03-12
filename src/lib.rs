@@ -23,12 +23,15 @@ pub struct Swarm {
 
 impl Swarm {
     pub fn bind<T: ToSocketAddrs>(addr: T) -> Result<Swarm, io::Error> {
+        debug!("binding swarm");
         let mut addr_iter = addr.to_socket_addrs()?;
         let addr = match addr_iter.next() {
             Some(addr) => addr,
             None => return Err(io::Error::new(
                 io::ErrorKind::AddrNotAvailable, "invalid bind address")),
         };
+
+        trace!("addr: {}", addr);
 
         Ok ( 
             Swarm {
@@ -49,7 +52,7 @@ impl Swarm {
             U: SwarmServer>(&mut self, service: Arc<RwLock<T>>,
             server: U) -> Result<(), io::Error> {
         // start local swarm server
-        info!("starting swarm server");
+        debug!("starting swarm server");
         server.start(self.listener.try_clone()?, service.clone(),
             self.shutdown.clone(), &mut self.join_handles)?;
 
@@ -60,10 +63,11 @@ impl Swarm {
         }
 
         // start gossip thread for swarm service
-        info!("starting swarm service");
+        debug!("starting swarm service");
         let shutdown_clone = self.shutdown.clone();
         let gossip_interval_duration =
             Duration::from_millis(self.gossip_interval_ms);
+        trace!("gossip_interval_ms: {}", self.gossip_interval_ms);
         let join_handle = thread::spawn(move || {
             loop {
                 let instant = Instant::now();
@@ -100,7 +104,7 @@ impl Swarm {
         }
 
         // perform shutdown
-        info!("stopping swarm");
+        debug!("stopping swarm");
         self.shutdown.store(true, Ordering::Relaxed);
 
         // join threads
@@ -126,7 +130,7 @@ mod tests {
 
         // start swarm
         let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
-        let server = ThreadPoolServer::new(4, 50);
+        let server = ThreadPoolServer::new(50, 4);
         swarm.start(service, server).expect("swarm start");
 
         // stop swarm

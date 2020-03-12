@@ -88,9 +88,11 @@ impl SwarmService for DhtService {
         let mut socket_addr: Option<SocketAddr> = None;
  
         // check if only local node is registered
+        println!("self.node.len(): {}", self.nodes.len());
+        println!("self.seed_addr: {:?}", self.seed_addr);
         if self.nodes.len() > 1 {
             // choose random node
-            let mut index = rand::random::<usize>() % (self.nodes.len() - 2);
+            let mut index = rand::random::<usize>() % (self.nodes.len() - 1);
             for (id, addr) in self.nodes.iter() {
                 match (id, index) {
                     (x, _) if x == &self.local_id => {},
@@ -102,6 +104,8 @@ impl SwarmService for DhtService {
             socket_addr = Some(seed_addr);
         }
 
+        println!("{:?}", socket_addr);
+
         // check if gossip node exists
         let socket_addr = match socket_addr {
             Some(socket_addr) => socket_addr,
@@ -112,17 +116,18 @@ impl SwarmService for DhtService {
         let mut stream = TcpStream::connect(&socket_addr)?;
 
         // send request - node_id, socket_addr, nodes_hash, tokens_hash
+        println!("gossip write node");
         let local_addr = self.get(self.local_id).unwrap();
         write_node(&mut stream, self.local_id, &local_addr)?;
 
         // process node updates
-        stream.write_u64::<BigEndian>(self.hash_nodes())?;
+        /*stream.write_u64::<BigEndian>(self.hash_nodes())?;
 
         let node_updates = stream.read_u16::<BigEndian>()?;
         for _ in 0..node_updates {
             let (id, socket_addr) = read_node(&mut stream)?;
             if !self.nodes.contains_key(&id) {
-                info!("registering node '{}' {}", id, socket_addr);
+                debug!("registering node '{}' {}", id, socket_addr);
                 self.nodes.insert(id, socket_addr);
             }
         }
@@ -135,11 +140,12 @@ impl SwarmService for DhtService {
             let token = stream.read_u64::<BigEndian>()?;
             let id = stream.read_u16::<BigEndian>()?;
             if !self.tokens.contains_key(&token) {
-                info!("adding token {}:{}", token, id);
+                debug!("adding token {}:{}", token, id);
                 self.tokens.insert(token, id);
             }
-        }
+        }*/
 
+        println!("gossip done");
         Ok(())
     }
 
@@ -151,10 +157,11 @@ impl SwarmService for DhtService {
 
     fn process(&mut self, stream: &mut TcpStream) -> Result<(), io::Error> {
         // read request - node_id, socket_addr, nodes_hash, tokens_hash
+        println!("process read node");
         let (id, socket_addr) = read_node(stream)?;
 
         // write node updates
-        let node_hash = stream.read_u64::<BigEndian>()?;
+        /*let node_hash = stream.read_u64::<BigEndian>()?;
         if node_hash != self.hash_nodes() {
             stream.write_u16::<BigEndian>(self.nodes.len() as u16)?;
             for (id, socket_addr) in self.nodes.iter() {
@@ -174,16 +181,17 @@ impl SwarmService for DhtService {
             }
         } else {
             stream.write_u16::<BigEndian>(0)?;
-        }
+        }*/
  
         {
             // add gossiping node to nodes if does not exist
             if !self.nodes.contains_key(&id) {
-                info!("registering node '{}' {}", id, socket_addr);
+                debug!("registering node '{}' {}", id, socket_addr);
                 self.nodes.insert(id, socket_addr);
             }
         }
 
+        println!("process done");
         Ok(())
     }
 }

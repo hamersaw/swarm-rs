@@ -25,6 +25,8 @@ impl SwarmServer for ThreadPoolServer {
     fn start<T: 'static + SwarmService + Send + Sync>(&self,
             listener: TcpListener, service: Arc<RwLock<T>>, shutdown: Arc<AtomicBool>,
             join_handles: &mut Vec<JoinHandle<()>>)  -> Result<(), io::Error> {
+        trace!("sleep_ms: {}", self.sleep_ms);
+        trace!("thread_count: {}", self.thread_count);
         for _ in 0..self.thread_count {
             // clone variables
             let listener_clone = listener.try_clone()?;
@@ -36,10 +38,13 @@ impl SwarmServer for ThreadPoolServer {
             // spawn new thread to listen for tpc connections
             let join_handle = thread::spawn(move || {
                 for result in listener_clone.incoming() {
+                    println!("RECV CONNECTION");
                     match result {
                         Ok(mut stream) => {
                             // handle connection
+                            println!("server service.write()");
                             let mut service = service_clone.write().unwrap();
+                            println!("service.process()");
                             match service.process(&mut stream) {
                                 Err(ref e) if e.kind() != std::io
                                         ::ErrorKind::UnexpectedEof => {
@@ -50,8 +55,10 @@ impl SwarmServer for ThreadPoolServer {
                         },
                         Err(ref e) if e.kind() ==
                                 std::io::ErrorKind::WouldBlock => {
+                            println!("SLEEP");
                             // no connection available -> sleep
                             thread::sleep(sleep_duration);
+                            println!("SLEEP DONE");
                         },
                         Err(ref e) if e.kind() !=
                                 std::io::ErrorKind::WouldBlock => {
