@@ -36,7 +36,22 @@ impl DhtService {
     }
 
     pub fn locate(&self, token: u64) -> Option<(&u16, &SocketAddr)> {
-        unimplemented!();
+        // find smallest token that is larger than search token
+        for (key, value) in self.tokens.iter() {
+            if token < *key {
+                let socket_addr = self.nodes.get(value).unwrap();
+                return Some((value, socket_addr));
+            }
+        }
+
+        // if there are tokens -> return lowest token
+        if !self.tokens.is_empty() {
+            let id = self.tokens.values().next().unwrap();
+            let socket_addr = self.nodes.get(&id).unwrap();
+            return Some((&id, socket_addr));
+        }
+
+        None
     }
 
     pub fn nodes(&self) -> &BTreeMap<u16, SocketAddr> {
