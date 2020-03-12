@@ -1,17 +1,13 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+use crate::prelude::SwarmService;
+
 use std::io::{self, Read, Write};
 use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::sync::{Arc, RwLock};
-
-pub trait SwarmService {
-    fn gossip(&self, local_address: &SocketAddr) -> Result<(), io::Error>;
-
-    fn process(&self, stream: &mut TcpStream) -> Result<(), io::Error>;
-}
 
 pub struct DhtService {
     local_id: u16,
@@ -203,7 +199,7 @@ mod tests {
     fn dht_service_gossip() {
         use std::net::{IpAddr, SocketAddr, TcpListener};
         use std::thread;
-        use super::{DhtService, SwarmService};
+        use crate::prelude::{DhtService, SwarmService};
 
         // initialize listening service
         let ip_addr: IpAddr = "127.0.0.1".parse().expect("parse IpAddr");

@@ -1,4 +1,4 @@
-use crate::service::SwarmService;
+use crate::prelude::{SwarmService, SwarmServer};
 
 use std::io;
 use std::net::TcpListener;
@@ -6,12 +6,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-
-pub trait SwarmServer {
-    fn start<T: 'static + SwarmService + Send + Sync>(&self,
-        listener: TcpListener, service: Arc<T>, shutdown: Arc<AtomicBool>,
-        join_handles: &mut Vec<JoinHandle<()>>) -> Result<(), io::Error>;
-}
 
 pub struct ThreadPoolServer {
     sleep_ms: u64,

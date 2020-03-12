@@ -1,10 +1,10 @@
 #[macro_use]
 extern crate log;
 
-pub mod server;
-use server::SwarmServer;
-pub mod service;
-use service::SwarmService;
+mod server;
+pub mod prelude;
+use prelude::{SwarmServer, SwarmService};
+mod service;
 
 use std::io::{self};
 use std::net::{SocketAddr, TcpListener};
@@ -97,9 +97,7 @@ mod tests {
     fn cycle_swarm() {
         use std::net::{IpAddr, SocketAddr};
         use std::sync::Arc;
-        use crate::Swarm;
-        use crate::service::DhtService;
-        use crate::server::ThreadPoolServer;
+        use crate::prelude::{DhtService, Swarm, ThreadPoolServer};
  
         // bind swarm to tcp socket
         let ip_addr: IpAddr = "127.0.0.1".parse().expect("parse IpAddr");
