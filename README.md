@@ -28,6 +28,5 @@ A generalized distributed systems framework.
     swarm.stop().expect("swarm stop");
 
 ## TODO
-- add logging
 - implement single thread per connection server
 - implement master / slave service

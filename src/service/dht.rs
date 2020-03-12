@@ -122,6 +122,7 @@ impl SwarmService for DhtService {
         for _ in 0..node_updates {
             let (id, socket_addr) = read_node(&mut stream)?;
             if !self.nodes.contains_key(&id) {
+                info!("registering node '{}' {}", id, socket_addr);
                 self.nodes.insert(id, socket_addr);
             }
         }
@@ -134,6 +135,7 @@ impl SwarmService for DhtService {
             let token = stream.read_u64::<BigEndian>()?;
             let id = stream.read_u16::<BigEndian>()?;
             if !self.tokens.contains_key(&token) {
+                info!("adding token {}:{}", token, id);
                 self.tokens.insert(token, id);
             }
         }
@@ -177,6 +179,7 @@ impl SwarmService for DhtService {
         {
             // add gossiping node to nodes if does not exist
             if !self.nodes.contains_key(&id) {
+                info!("registering node '{}' {}", id, socket_addr);
                 self.nodes.insert(id, socket_addr);
             }
         }

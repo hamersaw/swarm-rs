@@ -49,6 +49,7 @@ impl Swarm {
             U: SwarmServer>(&mut self, service: Arc<RwLock<T>>,
             server: U) -> Result<(), io::Error> {
         // start local swarm server
+        info!("starting swarm server");
         server.start(self.listener.try_clone()?, service.clone(),
             self.shutdown.clone(), &mut self.join_handles)?;
 
@@ -59,6 +60,7 @@ impl Swarm {
         }
 
         // start gossip thread for swarm service
+        info!("starting swarm service");
         let shutdown_clone = self.shutdown.clone();
         let gossip_interval_duration =
             Duration::from_millis(self.gossip_interval_ms);
@@ -98,6 +100,7 @@ impl Swarm {
         }
 
         // perform shutdown
+        info!("stopping swarm");
         self.shutdown.store(true, Ordering::Relaxed);
 
         // join threads
