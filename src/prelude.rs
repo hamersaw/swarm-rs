@@ -1,5 +1,2 @@
-pub use crate::Swarm;
-pub use crate::server::SwarmServer;
-pub use crate::server::threadpool::ThreadPoolServer;
-pub use crate::service::SwarmService;
-pub use crate::service::dht::DhtService;
+pub use crate::{Swarm, SwarmConfig, SwarmConfigBuilder, SwarmService};
+pub use crate::service::{Dht, DhtService, DhtBuilder};
