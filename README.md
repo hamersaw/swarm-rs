@@ -28,5 +28,6 @@ A generalized distributed systems framework.
     swarm.stop().expect("swarm stop")
 
 ## TODO
-- complete dht functionality - lookup, nodes, tokens, etc
+- dht - add app_port and xfer_port
 - implement master / slave service
+- testing?
