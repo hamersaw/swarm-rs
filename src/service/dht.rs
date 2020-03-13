@@ -26,11 +26,11 @@ pub struct DhtService {
 }
 
 impl SwarmService for DhtService {
-    fn addr(&self) -> Option<SocketAddr> {
-        // check if only local node is registered
+    fn gossip_addr(&self) -> Option<SocketAddr> {
         let dht = self.dht.read().unwrap();
+
         if dht.nodes.len() > 1 {
-            // choose random node
+            // if more than local node is registered -> choose random
             let mut index = rand::random::<usize>() % (dht.nodes.len() - 1);
             for (id, addr) in dht.nodes.iter() {
                 match (id, index) {
@@ -40,6 +40,7 @@ impl SwarmService for DhtService {
                 }
             }
         } else if let Some(seed_addr) = self.seed_addr {
+            // if no other registered nodes -> return seed node
             return Some(seed_addr);
         }
 
@@ -47,15 +48,14 @@ impl SwarmService for DhtService {
     }
 
     fn request(&self, stream: &mut TcpStream) -> Result<(), io::Error> {
-        // send request - node_id, socket_addr, nodes_hash, tokens_hash
         {
             let dht = self.dht.read().unwrap();
+
+            // write local node information
             let local_addr = dht.get(self.id).unwrap();
             write_node(stream, self.id, &local_addr)?;
-        }
 
-        {
-            let dht = self.dht.read().unwrap();
+            // write node and token hashes
             stream.write_u64::<BigEndian>(hash_nodes(&dht.nodes))?;
             stream.write_u64::<BigEndian>(hash_tokens(&dht.tokens))?;
         }
@@ -89,9 +89,8 @@ impl SwarmService for DhtService {
     }
 
     fn reply(&self, stream: &mut TcpStream) -> Result<(), io::Error> {
-        // read request - node_id, socket_addr, nodes_hash, tokens_hash
+        // read request node and node and token hashes
         let (id, socket_addr) = read_node(stream)?;
-
         let node_hash = stream.read_u64::<BigEndian>()?;
         let token_hash = stream.read_u64::<BigEndian>()?;
 
@@ -230,12 +229,13 @@ impl DhtBuilder {
  
     pub fn build(self) -> Result<(Swarm<DhtService>,
             Arc<RwLock<Dht>>), io::Error> {
-        // process SwarmConfig
+        // if swarm_config not set -> build default
         let swarm_config = match self.swarm_config {
             Some(swarm_config) => swarm_config,
             None => SwarmConfigBuilder::new().build().unwrap(),
         };
 
+        // initialize node and token tables
         let mut nodes = BTreeMap::new();
         nodes.insert(self.id, swarm_config.addr);
 
@@ -244,18 +244,22 @@ impl DhtBuilder {
             tokens.insert(token, self.id);
         }
 
+        // initialize Dht
         let dht = Arc::new( RwLock::new( Dht {
             nodes: nodes,
             tokens: tokens,
         }));
 
+        // initialize DhtService
         let dht_service = DhtService {
             id: self.id,
             dht: dht.clone(),
             seed_addr: self.seed_addr,
         };
 
+        // initailize Swarm
         let swarm = Swarm::<DhtService>::new(dht_service, swarm_config);
+
         Ok((swarm, dht))
     }
 }

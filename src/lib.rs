@@ -36,47 +36,39 @@ impl<T: 'static + SwarmService + Sync + Send> Swarm<T> {
         // start TcpListener 
         let listener = TcpListener::bind(self.swarm_config.addr)?;
 
-        // start gossip server
+        // start gossip listening threads
         for _ in 0..self.swarm_config.listener_threads {
-            // clone variables
+            // clone gossip reply variables
             let listener_clone = listener.try_clone()?;
             listener_clone.set_nonblocking(true)?;
             let service_clone = self.service.clone();
-            let sleep_duration = Duration::from_millis(50); // TODO - parameterize
+            let sleep_duration = Duration::
+                from_millis(self.swarm_config.listener_sleep_ms);
             let shutdown_clone = self.shutdown.clone();
 
-            // spawn new thread to listen for tcp connections
+            // start gossip reply threads
             let join_handle = thread::spawn(move || {
                 for result in listener_clone.incoming() {
                     match result {
                         Ok(mut stream) => {
-                            // handle connection
-                            match service_clone.reply(&mut stream) {
-                                Err(ref e) if e.kind() != std::io
-                                        ::ErrorKind::UnexpectedEof => {
-                                    error!("failed to process stream {}", e);
-                                },
-                                _ => {},
+                            // send gossip reply
+                            if let Err(e) = service_clone.reply(&mut stream) {
+                                warn!("gossip reply failure: {}", e);
                             }
-                            /*let mut service = service_clone.write().unwrap();
-                            match service.reply(&mut stream) {
-                                Err(ref e) if e.kind() != std::io
-                                        ::ErrorKind::UnexpectedEof => {
-                                    error!("failed to process stream {}", e);
-                                },
-                                _ => {},
-                            }*/
-                            stream.shutdown(Shutdown::Both).expect("stream shutdown");
+
+                            // shutdown gossip connection
+                            if let Err(e) = stream.shutdown(Shutdown::Both) {
+                                warn!("gossip shutdown failure: {}", e);
+                            }
                         },
-                        Err(ref e) if e.kind() ==
-                                std::io::ErrorKind::WouldBlock => {
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                             // no connection available -> sleep
                             thread::sleep(sleep_duration);
                         },
                         Err(ref e) if e.kind() !=
-                                std::io::ErrorKind::WouldBlock => {
+                                io::ErrorKind::WouldBlock => {
                             // unknown error
-                            error!("failed to connect client: {}", e);
+                            warn!("gossip connection failure: {}", e);
                         },
                         _ => {},
                     }
@@ -88,80 +80,85 @@ impl<T: 'static + SwarmService + Sync + Send> Swarm<T> {
                 }
             });
 
+            // capture gossip reply thread JoinHandle
             self.join_handles.push(join_handle);
         }
 
+        // clone gossip request variables
         let shutdown_clone = self.shutdown.clone();
         let gossip_interval_duration =
             Duration::from_millis(self.swarm_config.gossip_interval_ms);
         let service_clone = self.service.clone();
+
+        // start gossip request thread
         let join_handle = thread::spawn(move || {
+            let mut instant = Instant::now();
             loop {
-                let instant = Instant::now();
-
-                let socket_addr = service_clone.addr();
-                //trace!("GOSSIP ADDR: {:?}", socket_addr);
-                if let Some(socket_addr) = socket_addr {
-                //if let Some(socket_addr) = service_clone.addr() {
-                    // connect to gossip node
-                    let mut stream = match TcpStream::connect(&socket_addr) {
-                        Ok(stream) => stream,
-                        Err(e) => {
-                            warn!("gossip connection failed: {}", socket_addr);
-                            continue;
-                        }
-                    };
-
-                    // send request
-                    if let Err(e) = service_clone.request(&mut stream) {
-                        error!("gossip request: {}", e);
-                    }
-
-                    stream.shutdown(Shutdown::Both).expect("stream shutdown");
-                }
-
-                /*// retrieve gossip address
-                let gossip_addr = {
-                    let service = service_clone.read().unwrap();
-                    service.addr()
-                };
-
-                if let Some(socket_addr) = gossip_addr {
-                    // connect to gossip node
-                    let mut stream = match TcpStream::connect(&socket_addr) {
-                        Ok(stream) => stream,
-                        Err(e) => {
-                            warn!("gossip connection failed: {}", socket_addr);
-                            continue;
-                        }
-                    };
-
-                    // send request
-                    let mut service = service_clone.write().unwrap();
-                    if let Err(e) = service.request(&mut stream) {
-                        error!("gossip request: {}", e);
-                    }
-                }*/
-
-                // check if shutdown
-                if shutdown_clone.load(Ordering::Relaxed) {
-                    break;
-                }
-
                 // sleep
                 let elapsed = instant.elapsed();
                 if elapsed < gossip_interval_duration {
                     thread::sleep(gossip_interval_duration - elapsed);
                 }
+                
+                // reset instance
+                instant = Instant::now();
+
+                // retrieve gossip address
+                let socket_addr = match service_clone.gossip_addr() {
+                    Some(socket_addr) => socket_addr,
+                    None => continue,
+                };
+
+                // connect to SocketAddr
+                let mut stream = match TcpStream::connect(&socket_addr) {
+                    Ok(stream) => stream,
+                    Err(e) => {
+                        warn!("gossip connection failure: {}", e);
+                        continue;
+                    },
+                };
+
+                // send gossip request
+                if let Err(e) = service_clone.request(&mut stream) {
+                    warn!("gossip request failure: {}", e);
+                }
+
+                // shutdown gossip connection
+                if let Err(e) = stream.shutdown(Shutdown::Both) {
+                    warn!("gossip shutdown failure: {}", e);
+                }
+
+                // check if shutdown
+                if shutdown_clone.load(Ordering::Relaxed) {
+                    break;
+                }
             }
         });
 
+        // capture gossip request thread JoinHandle
         self.join_handles.push(join_handle);
 
         Ok(())
     }
 
     pub fn stop(&mut self) -> Result<(), io::Error> {
+        // check if already shutdown
+        if self.shutdown.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        // perform shutdown
+        debug!("stopping swarm");
+        self.shutdown.store(true, Ordering::Relaxed);
+
+        // join threads
+        while self.join_handles.len() != 0 {
+            let join_handle = self.join_handles.pop().unwrap();
+            if let Err(e) = join_handle.join() {
+                warn!("join thread failure: {:?}", e);
+            }
+        }
+
         Ok(())
     }
 }
@@ -170,20 +167,23 @@ pub struct SwarmConfig {
     addr: SocketAddr,
     gossip_interval_ms: u64,
     listener_threads: u8,
+    listener_sleep_ms: u64,
 }
 
 pub struct SwarmConfigBuilder {
     addr: SocketAddr,
     gossip_interval_ms: u64,
     listener_threads: u8,
+    listener_sleep_ms: u64,
 }
 
 impl SwarmConfigBuilder {
     pub fn new() -> SwarmConfigBuilder {
         SwarmConfigBuilder {
             addr: "127.0.0.1:15600".parse().unwrap(),
-            gossip_interval_ms: 500,
+            gossip_interval_ms: 1000,
             listener_threads: 2,
+            listener_sleep_ms: 50,
         }
     }
 
@@ -204,11 +204,18 @@ impl SwarmConfigBuilder {
         self
     }
 
+    pub fn listener_sleep_ms(mut self,
+            listener_sleep_ms: u64) -> SwarmConfigBuilder {
+        self.listener_sleep_ms = listener_sleep_ms;
+        self
+    }
+
     pub fn build(self) -> Result<SwarmConfig, io::Error> {
         Ok( SwarmConfig {
             addr: self.addr,
             gossip_interval_ms: self.gossip_interval_ms,
             listener_threads: self.listener_threads,
+            listener_sleep_ms: self.listener_sleep_ms,
         })
     }
 }
