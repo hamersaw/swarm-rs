@@ -48,12 +48,11 @@ impl SwarmService for DhtService {
 
     fn request(&self, stream: &mut TcpStream) -> Result<(), io::Error> {
         // send request - node_id, socket_addr, nodes_hash, tokens_hash
-        let local_addr = {
+        {
             let dht = self.dht.read().unwrap();
-            dht.get(self.id).unwrap().clone()
-        };
-
-        write_node(stream, self.id, &local_addr)?;
+            let local_addr = dht.get(self.id).unwrap();
+            write_node(stream, self.id, &local_addr)?;
+        }
 
         {
             let dht = self.dht.read().unwrap();
@@ -63,7 +62,7 @@ impl SwarmService for DhtService {
 
         // process node updates
         let node_updates = stream.read_u16::<BigEndian>()?;
-        for i in 0..node_updates {
+        for _ in 0..node_updates {
             let (id, socket_addr) = read_node(stream)?;
 
             let mut dht = self.dht.write().unwrap();
@@ -229,7 +228,8 @@ impl DhtBuilder {
         self
     }
  
-    pub fn build(self) -> Result<(Swarm<DhtService>, Arc<RwLock<Dht>>), io::Error> {
+    pub fn build(self) -> Result<(Swarm<DhtService>,
+            Arc<RwLock<Dht>>), io::Error> {
         // process SwarmConfig
         let swarm_config = match self.swarm_config {
             Some(swarm_config) => swarm_config,
@@ -256,7 +256,6 @@ impl DhtBuilder {
         };
 
         let swarm = Swarm::<DhtService>::new(dht_service, swarm_config);
-
         Ok((swarm, dht))
     }
 }

@@ -2,20 +2,15 @@
 extern crate log;
 
 pub mod prelude;
+use prelude::SwarmService;
 pub mod service;
 
 use std::io;
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-
-pub trait SwarmService {
-    fn addr(&self) -> Option<SocketAddr>;
-    fn request(&self, stream: &mut TcpStream) -> Result<(), io::Error>;
-    fn reply(&self, stream: &mut TcpStream) -> Result<(), io::Error>;
-}
 
 pub struct Swarm<T: 'static + SwarmService + Sync + Send> {
     join_handles: Vec<JoinHandle<()>>,

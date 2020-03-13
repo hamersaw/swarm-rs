@@ -30,6 +30,5 @@ A generalized distributed systems framework.
 ## TODO
 - add additional logging
 - cleanup codebase
-    - refactor module directory structure
     - additional commenting
 - implement master / slave service
