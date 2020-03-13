@@ -1,6 +1,6 @@
 # swarm-rs
 ## OVERVIEW
-A generalized distributed systems framework.
+A generalized distributed systems cluster communication framework.
 
 ## EXAMPLE
     // build swarm config
