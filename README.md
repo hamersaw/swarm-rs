@@ -3,30 +3,33 @@
 A generalized distributed systems framework.
 
 ## EXAMPLE
-    use std::sync::{Arc, RwLock};
-    use crate::prelude::{DhtService, Swarm, ThreadPoolServer};
+    // build swarm config
+    let swarm_config = SwarmConfigBuilder::new()
+        .addr("127.0.0.1:12001".parse().expect("parse addr"))
+        .build().expect("build swarm config");
 
-    // bind swarm to tcp socket
-    let mut swarm = Swarm::bind("127.0.0.1:15605").expect("swarm bind");
-    swarm.set_gossip_interval_ms(500);
+    // build dht
+    let (mut swarm, dht) = DhtBuilder::new()
+        .id(opt.node_id)
+        .seed_addr("127.0.0.1:12000".parse().expect("parse seed addr"))
+        .swarm_config(swarm_config)
+        .tokens(opt.tokens)
+        .build()
 
     // start swarm
-    let service = Arc::new(RwLock::new(DhtService::new(0, &[0], None)));
-    let server = ThreadPoolServer::new(4, 50);
-    swarm.start(service, server).expect("swarm start");
+    swarm.start().expect("swarm start");
 
-    // perform operations on dht
     {
-        let service = service.read().unwrap();
-        match service.locate(1023523) {
-            Some((id, socket_addr)) => println!("addr: {}", socket_addr),
-            None => panic!("dht node not found"),
-        }
+        let dht = dht.read().unwrap();
+        let _ = dht.get(0);
     }
 
     // stop swarm
-    swarm.stop().expect("swarm stop");
+    swarm.stop().expect("swarm stop")
 
 ## TODO
-- implement single thread per connection server
+- add additional logging
+- cleanup codebase
+    - refactor module directory structure
+    - additional commenting
 - implement master / slave service
