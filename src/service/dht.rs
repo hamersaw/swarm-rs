@@ -9,7 +9,7 @@ use std::io::{self, Read, Write};
 use std::sync::{Arc, RwLock};
 
 pub struct Dht {
-    nodes: BTreeMap<u16, SocketAddr>,
+    nodes: BTreeMap<u16, (SocketAddr, Option<SocketAddr>, Option<SocketAddr>)>,
     tokens: BTreeMap<u64, u16>,
 }
 
@@ -19,32 +19,39 @@ impl Dht {
         debug!("added token '{}' {}", token, id);
     }
 
-    pub fn get(&self, id: u16) -> Option<&SocketAddr> {
-        self.nodes.get(&id)
+    pub fn get(&self, id: u16) 
+            -> Option<(&Option<SocketAddr>, &Option<SocketAddr>)> {
+        match self.nodes.get(&id) {
+            Some((_, rpc_addr, xfer_addr)) => Some((rpc_addr, xfer_addr)),
+            None => None,
+        }
     }
 
-    pub fn locate(&self, token: u64) -> Option<(&u16, &SocketAddr)> {
+    pub fn locate(&self, token: u64) 
+            -> Option<(&u16, (&Option<SocketAddr>, &Option<SocketAddr>))> {
         // find smallest token that is larger than search token
         for (key, value) in self.tokens.iter() {
             if token < *key {
-                let socket_addr = self.nodes.get(value).unwrap();
-                return Some((value, socket_addr));
+                let (_, rpc_addr, xfer_addr) = self.nodes.get(value).unwrap();
+                return Some((value, (rpc_addr, xfer_addr)));
             }
         }
 
         // if there are tokens -> return lowest token
         if !self.tokens.is_empty() {
             let id = self.tokens.values().next().unwrap();
-            let socket_addr = self.nodes.get(&id).unwrap();
-            return Some((&id, socket_addr));
+            let (_, rpc_addr, xfer_addr) = self.nodes.get(&id).unwrap();
+            return Some((&id, (rpc_addr, xfer_addr)));
         }
 
         None
     }
 
-    pub fn register_node(&mut self, id: u16, socket_addr: SocketAddr) {
-        self.nodes.insert(id, socket_addr);
-        debug!("registered node '{}' {}", id, socket_addr);
+    pub fn register_node(&mut self, id: u16, swarm_addr: SocketAddr,
+            rpc_addr: Option<SocketAddr>, xfer_addr: Option<SocketAddr>) {
+        self.nodes.insert(id, (swarm_addr, rpc_addr, xfer_addr));
+        debug!("registered node '{}' {} {:?} {:?}",
+            id, swarm_addr, rpc_addr, xfer_addr);
     }
 }
 
@@ -61,10 +68,10 @@ impl SwarmService for DhtService {
         if dht.nodes.len() > 1 {
             // if more than local node is registered -> choose random
             let mut index = rand::random::<usize>() % (dht.nodes.len() - 1);
-            for (id, addr) in dht.nodes.iter() {
+            for (id, addrs) in dht.nodes.iter() {
                 match (id, index) {
                     (x, _) if x == &self.id => {},
-                    (_, 0) => return Some(addr.clone()),
+                    (_, 0) => return Some(addrs.0.clone()),
                     _ => index -= 1,
                 }
             }
@@ -81,8 +88,9 @@ impl SwarmService for DhtService {
             let dht = self.dht.read().unwrap();
 
             // write local node information
-            let local_addr = dht.get(self.id).unwrap();
-            write_node(stream, self.id, &local_addr)?;
+            let (swarm_addr, rpc_addr, xfer_addr) =
+                dht.nodes.get(&self.id).unwrap();
+            write_node(stream, self.id, &swarm_addr, &rpc_addr, &xfer_addr)?;
 
             // write node and token hashes
             stream.write_u64::<BigEndian>(hash_nodes(&dht.nodes))?;
@@ -92,11 +100,11 @@ impl SwarmService for DhtService {
         // process node updates
         let node_updates = stream.read_u16::<BigEndian>()?;
         for _ in 0..node_updates {
-            let (id, socket_addr) = read_node(stream)?;
+            let (id, swarm_addr, rpc_addr, xfer_addr) = read_node(stream)?;
 
             let mut dht = self.dht.write().unwrap();
             if !dht.nodes.contains_key(&id) {
-                dht.register_node(id, socket_addr);
+                dht.register_node(id, swarm_addr, rpc_addr, xfer_addr);
             }
         }
 
@@ -117,7 +125,7 @@ impl SwarmService for DhtService {
 
     fn reply(&self, stream: &mut TcpStream) -> Result<(), io::Error> {
         // read request node and node and token hashes
-        let (id, socket_addr) = read_node(stream)?;
+        let (id, swarm_addr, rpc_addr, xfer_addr) = read_node(stream)?;
         let node_hash = stream.read_u64::<BigEndian>()?;
         let token_hash = stream.read_u64::<BigEndian>()?;
 
@@ -127,8 +135,8 @@ impl SwarmService for DhtService {
             // write node updates
             if node_hash != hash_nodes(&dht.nodes) {
                 stream.write_u16::<BigEndian>(dht.nodes.len() as u16)?;
-                for (id, socket_addr) in dht.nodes.iter() {
-                    write_node(stream, *id, socket_addr)?;
+                for (id, (swarm_addr, rpc_addr, xfer_addr)) in dht.nodes.iter() {
+                    write_node(stream, *id, swarm_addr, rpc_addr, xfer_addr)?;
                 }
             } else {
                 stream.write_u16::<BigEndian>(0)?;
@@ -150,7 +158,7 @@ impl SwarmService for DhtService {
             // add gossiping node to nodes if does not exist
             let mut dht = self.dht.write().unwrap();
             if !dht.nodes.contains_key(&id) {
-                dht.register_node(id, socket_addr);
+                dht.register_node(id, swarm_addr, rpc_addr, xfer_addr);
             }
         }
 
@@ -158,7 +166,8 @@ impl SwarmService for DhtService {
     }
 }
 
-fn hash_nodes(nodes: &BTreeMap<u16, SocketAddr>) -> u64 {
+fn hash_nodes(nodes: &BTreeMap<u16, (SocketAddr,
+        Option<SocketAddr>, Option<SocketAddr>)>) -> u64 {
     let mut hasher = DefaultHasher::new();
     for key in nodes.keys() {
         hasher.write_u16(*key);
@@ -177,9 +186,26 @@ fn hash_tokens(tokens: &BTreeMap<u64, u16>) -> u64 {
     hasher.finish()
 }
 
-fn read_node(stream: &mut TcpStream)
-        -> Result<(u16, SocketAddr), io::Error> {
+fn read_node(stream: &mut TcpStream) -> Result<(u16, SocketAddr,
+        Option<SocketAddr>, Option<SocketAddr>), io::Error> {
     let id = stream.read_u16::<BigEndian>()?;
+    let swarm_addr = read_addr(stream)?;
+    let rpc_addr = match stream.read_u8()? {
+        1 => Some(read_addr(stream)?),
+        0 => None,
+        _ => return Err(io::Error::new(
+            io::ErrorKind::InvalidData, "unknown ip version")),
+    };
+    let xfer_addr = match stream.read_u8()? {
+        1 => Some(read_addr(stream)?),
+        0 => None,
+        _ => return Err(io::Error::new(
+            io::ErrorKind::InvalidData, "unknown ip version")),
+    };
+    Ok((id, swarm_addr, rpc_addr, xfer_addr))
+}
+
+fn read_addr(stream: &mut TcpStream) -> Result<SocketAddr, io::Error> {
     let ip_addr = match stream.read_u8()? {
         4 => {
             let mut buf = [0u8; 4];
@@ -195,13 +221,33 @@ fn read_node(stream: &mut TcpStream)
             io::ErrorKind::InvalidData, "unknown ip version")),
     };
     let port = stream.read_u16::<BigEndian>()?;
-    let socket_addr = SocketAddr::new(ip_addr, port);
-    Ok((id, socket_addr))
+    Ok(SocketAddr::new(ip_addr, port))
 }
 
 fn write_node(stream: &mut TcpStream, id: u16,
-        addr: &SocketAddr) -> Result<(), io::Error> {
+        swarm_addr: &SocketAddr, rpc_addr: &Option<SocketAddr>,
+        xfer_addr: &Option<SocketAddr>) -> Result<(), io::Error> {
     stream.write_u16::<BigEndian>(id)?;
+    write_addr(stream, swarm_addr)?;
+    match rpc_addr {
+        Some(rpc_addr) => {
+            stream.write_u8(1)?;
+            write_addr(stream, rpc_addr)?;
+        },
+        None => stream.write_u8(0)?,
+    }
+    match xfer_addr {
+        Some(xfer_addr) => {
+            stream.write_u8(1)?;
+            write_addr(stream, xfer_addr)?;
+        },
+        None => stream.write_u8(0)?,
+    }
+    Ok(())
+}
+
+fn write_addr(stream: &mut TcpStream, addr: &SocketAddr)
+        -> Result<(), io::Error> {
     match addr {
         SocketAddr::V4(socket_addr_v4) => {
             stream.write_u8(4)?;
@@ -218,23 +264,32 @@ fn write_node(stream: &mut TcpStream, id: u16,
 
 pub struct DhtBuilder {
     id: u16,
+    rpc_addr: Option<SocketAddr>,
     seed_addr: Option<SocketAddr>,
     swarm_config: Option<SwarmConfig>,
     tokens: Vec<u64>,
+    xfer_addr: Option<SocketAddr>,
 }
 
 impl DhtBuilder {
     pub fn new() -> DhtBuilder {
         DhtBuilder {
             id: 0,
+            rpc_addr: None,
             seed_addr: None,
             swarm_config: None,
             tokens: Vec::new(),
+            xfer_addr: None,
         }
     }
 
     pub fn id(mut self, id: u16) -> DhtBuilder {
         self.id = id;
+        self
+    }
+
+    pub fn rpc_addr(mut self, rpc_addr: SocketAddr) -> DhtBuilder {
+        self.rpc_addr = Some(rpc_addr);
         self
     }
 
@@ -250,6 +305,11 @@ impl DhtBuilder {
 
     pub fn tokens(mut self, tokens: Vec<u64>) -> DhtBuilder {
         self.tokens = tokens;
+        self
+    }
+
+    pub fn xfer_addr(mut self, xfer_addr: SocketAddr) -> DhtBuilder {
+        self.xfer_addr = Some(xfer_addr);
         self
     }
  
@@ -271,7 +331,8 @@ impl DhtBuilder {
             let mut dht = dht.write().unwrap();
 
             // register local node
-            dht.register_node(self.id, swarm_config.addr);
+            dht.register_node(self.id, swarm_config.addr,
+                self.rpc_addr, self.xfer_addr);
 
             // add local tokens
             for token in self.tokens {

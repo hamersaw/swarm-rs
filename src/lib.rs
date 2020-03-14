@@ -232,17 +232,21 @@ mod tests {
 
         let (mut swarm, dht) = DhtBuilder::new()
             .id(0)
-            //.rpc_addr("127.0.0.1:15601".parse().expect("parse rpc addr"))
-            //.xfer_addr("127.0.0.1:15602".parse().expect("parse xfer addr"))
+            .rpc_addr("127.0.0.1:15601".parse().expect("parse rpc addr"))
             .swarm_config(swarm_config)
             .tokens(vec!(0, 6148914691236516864, 12297829382473033728))
+            .xfer_addr("127.0.0.1:15602".parse().expect("parse xfer addr"))
             .build().expect("build dht");
 
         swarm.start().expect("swarm start");
 
         {
             let dht = dht.read().unwrap();
-            let _ = dht.get(0);
+            match dht.get(0) {
+                Some((rpc_addr, xfer_addr)) =>
+                    println!("{:?} {:?}", rpc_addr, xfer_addr),
+                None => println!("node not found"),
+            }
         }
 
         swarm.stop().expect("swarm stop");
