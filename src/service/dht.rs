@@ -14,6 +14,11 @@ pub struct Dht {
 }
 
 impl Dht {
+    pub fn add_token(&mut self, token: u64, id: u16) {
+        self.tokens.insert(token, id);
+        debug!("added token '{}' {}", token, id);
+    }
+
     pub fn get(&self, id: u16) -> Option<&SocketAddr> {
         self.nodes.get(&id)
     }
@@ -35,6 +40,11 @@ impl Dht {
         }
 
         None
+    }
+
+    pub fn register_node(&mut self, id: u16, socket_addr: SocketAddr) {
+        self.nodes.insert(id, socket_addr);
+        debug!("registered node '{}' {}", id, socket_addr);
     }
 }
 
@@ -86,8 +96,7 @@ impl SwarmService for DhtService {
 
             let mut dht = self.dht.write().unwrap();
             if !dht.nodes.contains_key(&id) {
-                debug!("registering node '{}' {}", id, socket_addr);
-                dht.nodes.insert(id, socket_addr);
+                dht.register_node(id, socket_addr);
             }
         }
 
@@ -99,8 +108,7 @@ impl SwarmService for DhtService {
 
             let mut dht = self.dht.write().unwrap();
             if !dht.tokens.contains_key(&token) {
-                debug!("adding token {}:{}", token, id);
-                dht.tokens.insert(token, id);
+                dht.add_token(token, id);
             }
         }
 
@@ -142,8 +150,7 @@ impl SwarmService for DhtService {
             // add gossiping node to nodes if does not exist
             let mut dht = self.dht.write().unwrap();
             if !dht.nodes.contains_key(&id) {
-                debug!("registering node '{}' {}", id, socket_addr);
-                dht.nodes.insert(id, socket_addr);
+                dht.register_node(id, socket_addr);
             }
         }
 
@@ -254,20 +261,23 @@ impl DhtBuilder {
             None => SwarmConfigBuilder::new().build().unwrap(),
         };
 
-        // initialize node and token tables
-        let mut nodes = BTreeMap::new();
-        nodes.insert(self.id, swarm_config.addr);
-
-        let mut tokens = BTreeMap::new();
-        for token in self.tokens {
-            tokens.insert(token, self.id);
-        }
-
         // initialize Dht
         let dht = Arc::new( RwLock::new( Dht {
-            nodes: nodes,
-            tokens: tokens,
+            nodes: BTreeMap::new(),
+            tokens: BTreeMap::new(),
         }));
+
+        {
+            let mut dht = dht.write().unwrap();
+
+            // register local node
+            dht.register_node(self.id, swarm_config.addr);
+
+            // add local tokens
+            for token in self.tokens {
+                dht.add_token(token, self.id);
+            }
+        }
 
         // initialize DhtService
         let dht_service = DhtService {

@@ -94,12 +94,17 @@ impl<T: 'static + SwarmService + Sync + Send> Swarm<T> {
         let join_handle = thread::spawn(move || {
             let mut instant = Instant::now();
             loop {
+                // check if shutdown
+                if shutdown_clone.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 // sleep
                 let elapsed = instant.elapsed();
                 if elapsed < gossip_interval_duration {
                     thread::sleep(gossip_interval_duration - elapsed);
                 }
-                
+
                 // reset instance
                 instant = Instant::now();
 
@@ -126,11 +131,6 @@ impl<T: 'static + SwarmService + Sync + Send> Swarm<T> {
                 // shutdown gossip connection
                 if let Err(e) = stream.shutdown(Shutdown::Both) {
                     warn!("gossip shutdown failure: {}", e);
-                }
-
-                // check if shutdown
-                if shutdown_clone.load(Ordering::Relaxed) {
-                    break;
                 }
             }
         });
@@ -222,8 +222,7 @@ impl SwarmConfigBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::{DhtBuilder, Swarm, SwarmConfigBuilder};
-    use std::net::SocketAddr;
+    use crate::prelude::{DhtBuilder, SwarmConfigBuilder};
 
     #[test]
     fn cycle_swarm() {
@@ -233,6 +232,8 @@ mod tests {
 
         let (mut swarm, dht) = DhtBuilder::new()
             .id(0)
+            //.rpc_addr("127.0.0.1:15601".parse().expect("parse rpc addr"))
+            //.xfer_addr("127.0.0.1:15602".parse().expect("parse xfer addr"))
             .swarm_config(swarm_config)
             .tokens(vec!(0, 6148914691236516864, 12297829382473033728))
             .build().expect("build dht");
@@ -244,6 +245,6 @@ mod tests {
             let _ = dht.get(0);
         }
 
-        swarm.stop();
+        swarm.stop().expect("swarm stop");
     }
 }

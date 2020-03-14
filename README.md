@@ -1,6 +1,6 @@
 # swarm-rs
 ## OVERVIEW
-A generalized distributed systems cluster communication framework.
+swarm-rs is a generalized distributed systems cluster communication framework. The goal of this framework is to quickly and easily initialize programs which may be setup in a variety of distributed systems topologies.
 
 ## EXAMPLE
     // build swarm config
