@@ -4,6 +4,7 @@ use crate::service::{read_node, write_node};
 
 use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::btree_map::Iter;
 use std::hash::Hasher;
 use std::net::{SocketAddr, TcpStream};
 use std::io;
@@ -26,6 +27,10 @@ impl Dht {
             Some((_, rpc_addr, xfer_addr)) => Some((rpc_addr, xfer_addr)),
             None => None,
         }
+    }
+
+    pub fn list(&self) -> Iter<u16, (SocketAddr, Option<SocketAddr>, Option<SocketAddr>)> {
+        self.nodes.iter()
     }
 
     pub fn locate(&self, token: u64) 

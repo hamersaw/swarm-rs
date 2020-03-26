@@ -34,4 +34,5 @@ swarm-rs is a generalized distributed systems cluster communication framework. T
     swarm.stop().expect("swarm stop")
 
 ## TODO
+- trace logging - variable values
 - implement master / slave service
