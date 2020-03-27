@@ -29,7 +29,7 @@ impl Dht {
         }
     }
 
-    pub fn list(&self) -> Iter<u16, (SocketAddr, Option<SocketAddr>, Option<SocketAddr>)> {
+    pub fn iter(&self) -> Iter<u16, (SocketAddr, Option<SocketAddr>, Option<SocketAddr>)> {
         self.nodes.iter()
     }
 
