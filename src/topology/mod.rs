@@ -8,12 +8,13 @@ use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, RwLock};
 
 pub trait TopologyBuilder<T: 'static + Topology + Sync + Send> {
-    fn build(&self, id: u32, nodes: Arc<RwLock<HashMap<u32, Node>>>)
-        -> T;
+    fn build(&self, id: u32,
+        nodes: Arc<RwLock<HashMap<u32, Node>>>) -> T;
 }
 
 pub trait Topology {
-    fn gossip_addr(&self) -> Option<SocketAddr>;
+    fn gossip_addr(&self, id: u32, seed_address: &Option<SocketAddr>)
+        -> Option<SocketAddr>;
     fn request(&self, stream: &mut TcpStream)
         -> Result<(), Box<dyn Error>>;
     fn reply(&self, stream: &mut TcpStream)

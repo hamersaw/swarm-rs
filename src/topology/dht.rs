@@ -58,8 +58,25 @@ impl Dht {
 }
 
 impl Topology for Dht {
-    fn gossip_addr(&self) -> Option<SocketAddr> {
-        unimplemented!();
+    fn gossip_addr(&self, id: u32, seed_address: &Option<SocketAddr>)
+            -> Option<SocketAddr> {
+        let nodes = self.nodes.read().unwrap();
+        if nodes.len() > 1 {
+            // if more than local node is registered -> choose random
+            let mut index = rand::random::<usize>() % (nodes.len() - 1);
+            for (node_id, node) in nodes.iter() {
+                match (node_id, index) {
+                    (x, _) if x == &id => {},
+                    (_, 0) => return Some(node.get_address().clone()),
+                    _ => index -= 1,
+                }
+            }
+        } else if let Some(seed_address) = seed_address {
+            // if no other registered nodes -> return seed node
+            return Some(seed_address.clone());
+        }
+
+        None
     }
 
     fn request(&self, stream: &mut TcpStream)

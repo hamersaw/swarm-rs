@@ -29,6 +29,10 @@ impl Node {
         self.id
     }
 
+    pub fn get_address(&self) -> &SocketAddr {
+        &self.address
+    }
+
     pub fn get_metadata(&self, key: &str) -> Option<&String> {
         self.metadata.get(key)
     }
@@ -45,14 +49,14 @@ pub struct Swarm<T: 'static + Topology + Sync + Send> {
     nodes: Arc<RwLock<HashMap<u32, Node>>>,
     seed_address: Option<SocketAddr>,
     shutdown: Arc<AtomicBool>,
-    topology: Arc<RwLock<T>>,
+    topology: Arc<T>,
 }
 
 impl<T: 'static + Topology + Sync + Send> Swarm<T> {
     pub fn new(id: u32, address: SocketAddr,
             seed_address: Option<SocketAddr>,
             topology_builder: impl TopologyBuilder<T>)
-            -> (Swarm<T>, Arc<RwLock<T>>) {
+            -> (Swarm<T>, Arc<T>) {
         // initialize nodes
         let nodes = Arc::new(RwLock::new(HashMap::new()));
         {
@@ -61,9 +65,8 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         }
 
         // initialize topology
-        let topology = Arc::new(RwLock::new(
-                topology_builder.build(id, nodes.clone())
-            ));
+        let topology = 
+            Arc::new(topology_builder.build(id, nodes.clone()));
 
         // initialize swarm
         let swarm = Swarm {
@@ -116,13 +119,15 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
 
         // clone gossip request variables
         let gossip_interval = Duration::from_millis(gossip_interval_ms);
+        let id = self.id;
+        let seed_address = self.seed_address.clone();
         let shutdown_clone = self.shutdown.clone();
         let topology_clone = self.topology.clone();
 
         // start gossip request thread
         let join_handle = thread::spawn(move || {
-            if let Err(e) = gossiper(gossip_interval,
-                    shutdown_clone, topology_clone) {
+            if let Err(e) = gossiper(gossip_interval, id,
+                    seed_address, shutdown_clone, topology_clone) {
                 error!("gossiper failed: {}", e);
             }
         });
@@ -157,15 +162,16 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
 
 fn gossip_listener<T: 'static + Topology + Sync + Send>(
         listener: TcpListener, shutdown: Arc<AtomicBool>,
-        thread_sleep: Duration, topology: Arc<RwLock<T>>)
+        thread_sleep: Duration, topology: Arc<T>)
         -> Result<(), Box<dyn Error>> {
     for result in listener.incoming() {
         match result {
             Ok(mut stream) => {
-                // send gossip reply
-                let topology = topology.read().unwrap();
+                // TODO - handle node gossip reply
+               
+                // handle topology gossip reply
                 if let Err(e) = topology.reply(&mut stream) {
-                    warn!("gossip reply failure: {}", e);
+                    warn!("topology gossip reply failure: {}", e);
                 }
 
                 // shutdown gossip connection
@@ -195,8 +201,9 @@ fn gossip_listener<T: 'static + Topology + Sync + Send>(
 }
 
 fn gossiper<T: 'static + Topology + Sync + Send>(
-        gossip_interval: Duration, shutdown: Arc<AtomicBool>,
-        topology: Arc<RwLock<T>>) -> Result<(), Box<dyn Error>> {
+        gossip_interval: Duration, id: u32,
+        seed_address: Option<SocketAddr>, shutdown: Arc<AtomicBool>,
+        topology: Arc<T>) -> Result<(), Box<dyn Error>> {
     let mut instant = Instant::now();
     instant -= gossip_interval;
 
@@ -216,8 +223,7 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
         instant = Instant::now();
 
         // retrieve gossip address
-        let topology = topology.read().unwrap();
-        let socket_addr = match topology.gossip_addr() {
+        let socket_addr = match topology.gossip_addr(id, &seed_address) {
             Some(socket_addr) => socket_addr,
             None => continue,
         };
@@ -231,7 +237,9 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
             },
         };
 
-        // send gossip request
+        // TODO - send nodes gossip request
+
+        // send topology gossip request
         if let Err(e) = topology.request(&mut stream) {
             warn!("gossip request failure: {}", e);
         }
@@ -269,14 +277,13 @@ mod tests {
 	swarm.start(2, 50, 2000).expect("swarm start");
 
 	{
-	    let dht = dht.read().unwrap();
             match dht.get(0) {
                 Some(node) => println!("{:?}",
                     node.get_metadata("rpc_addr")),
                 None => println!("node not found"),
 	    }
 	}
-        
+
         // stop swarm
         swarm.stop().expect("swarm stop")
     }
