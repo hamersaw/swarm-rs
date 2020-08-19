@@ -32,6 +32,38 @@ swarm-rs is a generalized distributed systems cluster communication framework. T
 
     // stop swarm
     swarm.stop().expect("swarm stop")
+#### v0.3 mockup
+	// initialize topology builder
+    let dht_builder = DhtBuilder::new(
+        vec!(0, 6148914691236516864, 12297829382473033728));
+
+	// initialize swarm
+    let address = "127.0.0.1:12000".parse()
+        .expect("parse seed addr");
+    let seed_address = "127.0.0.1:12010".parse()
+        .expect("parse seed addr");
+
+    let mut metadata = HashMap::new();
+    metadata.insert("rpc_addr".to_string(),
+        "127.0.0.1:12002".to_string());
+    metadata.insert("xfer_addr".to_string(),
+        "127.0.0.1:12003".to_string());
+
+    let (mut swarm, dht) = Swarm::new(0, address,
+        metadata, Some(seed_address), dht_builder);
+
+	// start swarm
+	swarm.start().expect("swarm start");
+
+	{
+	    let dht = dht.read().unwrap();
+        match dht.get(0) {
+            Some(node) => println!("{:?}", node.metadata("rpc_addr")),
+            None => println!("node not found"),
+	    }
+	}
+        
+    swarm.stop().expect("swarm stop")
 
 ## TODO
 - trace logging - variable values
