@@ -224,36 +224,59 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
 
 #[cfg(test)]
 mod tests {
-    use crate::prelude::{DhtBuilder, Swarm};
+    use crate::prelude::{ClusterBuilder, Swarm};
 
     #[test]
     fn cycle_swarm() {
 	// initialize topology builder
-        let dht_builder = DhtBuilder::new(
-            vec!(0, 6148914691236516864, 12297829382473033728));
+        let cluster_builder = ClusterBuilder::new();
 
 	// initialize swarm
         let address = "127.0.0.1:12000".parse()
-            .expect("parse seed addr");
-        let (mut swarm, dht) =
-            Swarm::new(0, address, None, dht_builder);
-
-        // set swarm instance metadata
-        swarm.set_metadata("rpc_addr", "127.0.0.1:12002");
-        swarm.set_metadata("xfer_addr", "127.0.0.1:12003");
+            .expect("parse address");
+        let (mut swarm, _cluster) =
+            Swarm::new(0, address, None, cluster_builder);
 
 	// start swarm
 	swarm.start(2, 50, 2000).expect("swarm start");
 
-	{
-            match dht.get(0) {
-                Some(node) => println!("{:?}",
-                    node.get_metadata("rpc_addr")),
-                None => println!("node not found"),
-	    }
-	}
-
         // stop swarm
         swarm.stop().expect("swarm stop")
+    }
+
+    #[test]
+    fn node_gossip() {
+        let port = 13000;
+        let swarm_count = 4;
+        let sleep_ms = 1000;
+
+        // start multiple swarm instances
+        let mut swarms = Vec::new();
+        let seed_address = None;
+        for i in 0..swarm_count {
+            // initialize topology builder
+            let cluster_builder = ClusterBuilder::new();
+
+            // initialize swarm
+            let address = format!("127.0.0.1:{}", port + i).parse()
+                .expect("parse address");
+            let (mut swarm, dht) =
+                Swarm::new(i, address, seed_address, cluster_builder);
+
+            // start swarm
+            swarm.start(2, 50, 75).expect("swarm start");
+
+            // add swarm to vector
+            swarms.push(swarm);
+        }
+
+        // sleep sleep_ms
+        let sleep_duration = std::time::Duration::from_millis(sleep_ms);
+        std::thread::sleep(sleep_duration);
+
+        // stop swarms
+        for i in 0..swarm_count {
+            swarms[i as usize].stop().expect("swarm stop")
+        }
     }
 }

@@ -1,5 +1,6 @@
 use crate::node::Node;
 
+pub mod cluster;
 pub mod dht;
 
 use std::collections::HashMap;

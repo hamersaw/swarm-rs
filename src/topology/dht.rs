@@ -179,3 +179,25 @@ fn hash_tokens(tokens: &BTreeMap<u64, u32>) -> u64 {
 
     hasher.finish()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::prelude::{DhtBuilder, Swarm};
+
+    #[test]
+    fn dht_get() {
+	// initialize topology builder
+        let dht_builder = DhtBuilder::new(
+            vec!(0, 6148914691236516864, 12297829382473033728));
+
+	// initialize swarm
+        let address = "127.0.0.1:12000".parse()
+            .expect("parse seed addr");
+        let (_swarm, dht) =
+            Swarm::new(0, address, None, dht_builder);
+
+        let result = dht.get(15605);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().get_id(), 0);
+    }
+}
