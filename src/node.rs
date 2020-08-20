@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
 use std::hash::Hasher;
@@ -12,12 +12,12 @@ use std::net::{IpAddr, SocketAddr};
 pub struct Node {
     id: u32,
     address: SocketAddr,
-    metadata: HashMap<String, String>,
+    metadata: BTreeMap<String, String>,
 }
 
 impl Node {
     pub fn new(id: u32, address: SocketAddr) -> Node {
-        Node { id, address, metadata: HashMap::new() }
+        Node { id, address, metadata: BTreeMap::new() }
     }
 
     pub fn get_id(&self) -> u32 {
@@ -54,7 +54,17 @@ impl Node {
         let port = reader.read_u16::<BigEndian>()?;
         let address = SocketAddr::new(ip_address, port);
 
-        // TODO - read metadata
+        let mut node = Node::new(id, address);
+
+        // read metadata
+        let metadata_len = reader.read_u16::<BigEndian>()?;
+        for _ in 0..metadata_len {
+            let key = read_string(reader)?;
+            let value = read_string(reader)?;
+
+            node.set_metadata(&key, &value);
+        }
+
         Ok(Node::new(id, address))
     }
 
@@ -80,7 +90,12 @@ impl Node {
         }
         writer.write_u16::<BigEndian>(self.address.port())?;
 
-        // TODO - write metadata
+        // write metadata
+        writer.write_u16::<BigEndian>(self.metadata.len() as u16)?;
+        for (key, value) in self.metadata.iter() {
+            write_string(key, writer)?;
+            write_string(value, writer)?;
+        }
 
         Ok(())
     }
@@ -90,8 +105,26 @@ pub fn hash_nodes<'a>(nodes: impl Iterator<Item=&'a Node>) -> u64 {
     let mut hasher = DefaultHasher::new();
     for node in nodes {
         hasher.write_u32(node.get_id());
-        // TODO - hash metadata
+        for (key, value) in node.metadata.iter() {
+            hasher.write(key.as_bytes());
+            hasher.write(value.as_bytes());
+        }
     }
 
     hasher.finish()
+}
+
+pub fn read_string(reader: &mut impl Read)
+        -> Result<String, Box<dyn Error>> {
+    let len = reader.read_u8()?;
+    let mut buf = vec![0u8; len as usize];
+    reader.read_exact(&mut buf)?;
+    Ok(String::from_utf8(buf)?)
+}
+
+pub fn write_string(value: &str, writer: &mut impl Write)
+        -> Result<(), Box<dyn Error>> {
+    writer.write_u8(value.len() as u8)?;
+    writer.write(value.as_bytes())?;
+    Ok(())
 }

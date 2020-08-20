@@ -36,7 +36,6 @@ swarm-rs is a generalized distributed systems cluster communication framework. T
 	swarm.stop().expect("swarm start");
 
 ## TODO
-- handle node metadata in Dht
 - improve logging - info when starting everything
 - implement master / slave topology
 - implement mock topology
