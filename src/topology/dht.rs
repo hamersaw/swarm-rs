@@ -1,8 +1,12 @@
-use crate::Node;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+
+use crate::node::Node;
 use crate::topology::{Topology, TopologyBuilder};
 
 use std::collections::{BTreeMap, HashMap};
+use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
+use std::hash::Hasher;
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, RwLock};
 
@@ -26,19 +30,21 @@ impl TopologyBuilder<Dht> for DhtBuilder {
         }
 
         // initialize dht
-        Dht { tokens, nodes }
+        Dht { tokens: Arc::new(RwLock::new(tokens)), nodes }
     }
 }
 
 pub struct Dht {
-    tokens: BTreeMap<u64, u32>,
+    tokens: Arc<RwLock<BTreeMap<u64, u32>>>,
     nodes: Arc<RwLock<HashMap<u32, Node>>>,
 }
 
 impl Dht {
     pub fn get(&self, token: u64) -> Option<Node> {
+        let tokens = self.tokens.read().unwrap();
+
         // find smallest token that is larger than search token
-        for (key, value) in self.tokens.iter() {
+        for (key, value) in tokens.iter() {
             if token < *key {
                 let nodes = self.nodes.read().unwrap();
                 return Some(nodes.get(value).unwrap().clone());
@@ -46,8 +52,8 @@ impl Dht {
         }
 
         // if there are tokens -> return lowest token
-        if !self.tokens.is_empty() {
-            let id = self.tokens.values().next().unwrap();
+        if !tokens.is_empty() {
+            let id = tokens.values().next().unwrap();
             
             let nodes = self.nodes.read().unwrap();
             return Some(nodes.get(&id).unwrap().clone());
@@ -79,13 +85,97 @@ impl Topology for Dht {
         None
     }
 
-    fn request(&self, stream: &mut TcpStream)
+    fn request(&self, id: u32, stream: &mut TcpStream)
             -> Result<(), Box<dyn Error>> {
-        unimplemented!();
+        {
+            let nodes = self.nodes.read().unwrap();
+            let tokens = self.tokens.read().unwrap();
+
+            // write local node
+            let node = nodes.get(&id).unwrap();
+            node.write(stream)?;
+
+            // write node and token hashes
+            stream.write_u64::<BigEndian>(
+                crate::node::hash_nodes(nodes.values()))?;
+
+            stream.write_u64::<BigEndian>(hash_tokens(&tokens))?;
+        }
+
+        // process node updates
+        let node_updates = stream.read_u16::<BigEndian>()?;
+        for _ in 0..node_updates {
+            let node = Node::read(stream)?;
+
+            let mut nodes = self.nodes.write().unwrap();
+            nodes.insert(node.get_id(), node);
+        }
+
+        // process token updates
+        let token_updates = stream.read_u16::<BigEndian>()?;
+        for _ in 0..token_updates {
+            let token = stream.read_u64::<BigEndian>()?;
+            let id = stream.read_u32::<BigEndian>()?;
+
+            let mut tokens = self.tokens.write().unwrap();
+            if !tokens.contains_key(&token) {
+                tokens.insert(token, id);
+            }
+        }
+
+        Ok(())
     }
 
     fn reply(&self, stream: &mut TcpStream)
             -> Result<(), Box<dyn Error>> {
-        unimplemented!();
+        // read request node and node and token hashes
+        let node = Node::read(stream)?;
+        let node_hash = stream.read_u64::<BigEndian>()?;
+        let token_hash = stream.read_u64::<BigEndian>()?;
+
+        {
+            // write node updates
+            let nodes = self.nodes.read().unwrap();
+            if node_hash != crate::node::hash_nodes(nodes.values()) {
+                stream.write_u16::<BigEndian>(nodes.len() as u16)?;
+                for node in nodes.values() {
+                    node.write(stream)?;
+                }
+            } else {
+                stream.write_u16::<BigEndian>(0)?;
+            }
+        }
+
+        {
+            // write token updates
+            let tokens = self.tokens.read().unwrap();
+            if token_hash != hash_tokens(&tokens) {
+                stream.write_u16::<BigEndian>(tokens.len() as u16)?;
+                for (token, id) in tokens.iter() {
+                    stream.write_u64::<BigEndian>(*token)?;
+                    stream.write_u32::<BigEndian>(*id)?;
+                }
+            } else {
+                stream.write_u16::<BigEndian>(0)?;
+            }
+        }
+ 
+        {
+            // add gossiping node to nodes if does not exist
+            let mut nodes = self.nodes.write().unwrap();
+            nodes.insert(node.get_id(), node);
+        }
+
+        Ok(())
     }
+}
+
+fn hash_tokens(tokens: &BTreeMap<u64, u32>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    for (token, id) in tokens.iter() {
+        hasher.write_u64(*token);
+        hasher.write_u32(*id);
+    }
+
+    hasher.finish()
 }

@@ -1,4 +1,4 @@
-use crate::Node;
+use crate::node::Node;
 
 pub mod dht;
 
@@ -15,7 +15,7 @@ pub trait TopologyBuilder<T: 'static + Topology + Sync + Send> {
 pub trait Topology {
     fn gossip_addr(&self, id: u32, seed_address: &Option<SocketAddr>)
         -> Option<SocketAddr>;
-    fn request(&self, stream: &mut TcpStream)
+    fn request(&self, id: u32, stream: &mut TcpStream)
         -> Result<(), Box<dyn Error>>;
     fn reply(&self, stream: &mut TcpStream)
         -> Result<(), Box<dyn Error>>;

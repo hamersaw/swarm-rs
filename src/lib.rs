@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate log;
 
+mod node;
+use node::Node;
 pub mod prelude;
 mod topology;
 use topology::{Topology, TopologyBuilder};
@@ -12,35 +14,6 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-
-#[derive(Clone)]
-pub struct Node {
-    id: u32,
-    address: SocketAddr,
-    metadata: HashMap<String, String>,
-}
-
-impl Node {
-    pub fn new(id: u32, address: SocketAddr) -> Node {
-        Node { id, address, metadata: HashMap::new() }
-    }
-
-    pub fn get_id(&self) -> u32 {
-        self.id
-    }
-
-    pub fn get_address(&self) -> &SocketAddr {
-        &self.address
-    }
-
-    pub fn get_metadata(&self, key: &str) -> Option<&String> {
-        self.metadata.get(key)
-    }
-
-    pub fn set_metadata(&mut self, key: &str, value: &str) {
-        self.metadata.insert(key.to_string(), value.to_string());
-    }
-}
 
 pub struct Swarm<T: 'static + Topology + Sync + Send> {
     address: SocketAddr,
@@ -167,8 +140,6 @@ fn gossip_listener<T: 'static + Topology + Sync + Send>(
     for result in listener.incoming() {
         match result {
             Ok(mut stream) => {
-                // TODO - handle node gossip reply
-               
                 // handle topology gossip reply
                 if let Err(e) = topology.reply(&mut stream) {
                     warn!("topology gossip reply failure: {}", e);
@@ -188,7 +159,7 @@ fn gossip_listener<T: 'static + Topology + Sync + Send>(
                 // unknown error
                 warn!("gossip connection failure: {}", e);
             },
-            _ => {},
+            _ => {}, // e.kind() == std::io::ErrorKind::WouldBlock
         }
 
         // check if shutdown
@@ -237,10 +208,8 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
             },
         };
 
-        // TODO - send nodes gossip request
-
         // send topology gossip request
-        if let Err(e) = topology.request(&mut stream) {
+        if let Err(e) = topology.request(id, &mut stream) {
             warn!("gossip request failure: {}", e);
         }
 
