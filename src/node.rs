@@ -11,25 +11,34 @@ use std::net::{IpAddr, SocketAddr};
 #[derive(Clone)]
 pub struct Node {
     id: u32,
-    address: SocketAddr,
+    ip_address: IpAddr,
     metadata: BTreeMap<String, String>,
+    port: u16,
 }
 
 impl Node {
-    pub fn new(id: u32, address: SocketAddr) -> Node {
-        Node { id, address, metadata: BTreeMap::new() }
+    pub fn new(id: u32, ip_address: IpAddr, port: u16) -> Node {
+        Node { id, ip_address, metadata: BTreeMap::new(), port }
+    }
+
+    pub fn get_address(&self) -> SocketAddr {
+        SocketAddr::new(self.ip_address, self.port)
     }
 
     pub fn get_id(&self) -> u32 {
         self.id
     }
 
-    pub fn get_address(&self) -> &SocketAddr {
-        &self.address
+    pub fn get_ip_address(&self) -> &IpAddr {
+        &self.ip_address
     }
 
     pub fn get_metadata(&self, key: &str) -> Option<&String> {
         self.metadata.get(key)
+    }
+
+    pub fn get_port(&self) -> u16 {
+        self.port
     }
 
     pub fn read(reader: &mut impl Read)
@@ -52,9 +61,8 @@ impl Node {
             _ => return Err("unknown ip version".into()),
         };
         let port = reader.read_u16::<BigEndian>()?;
-        let address = SocketAddr::new(ip_address, port);
 
-        let mut node = Node::new(id, address);
+        let mut node = Node::new(id, ip_address, port);
 
         // read metadata
         let metadata_len = reader.read_u16::<BigEndian>()?;
@@ -65,7 +73,7 @@ impl Node {
             node.set_metadata(&key, &value);
         }
 
-        Ok(Node::new(id, address))
+        Ok(node)
     }
 
     pub fn set_metadata(&mut self, key: &str, value: &str) {
@@ -78,17 +86,17 @@ impl Node {
         writer.write_u32::<BigEndian>(self.id)?;
 
         // write address
-        match self.address {
-            SocketAddr::V4(socket_address_v4) => {
+        match self.ip_address {
+            IpAddr::V4(ip_address_v4) => {
                 writer.write_u8(4)?;
-                writer.write(&socket_address_v4.ip().octets())?;
+                writer.write(&ip_address_v4.octets())?;
             },
-            SocketAddr::V6(socket_address_v6) => {
+            IpAddr::V6(ip_address_v6) => {
                 writer.write_u8(6)?;
-                writer.write(&socket_address_v6.ip().octets())?;
+                writer.write(&ip_address_v6.octets())?;
             },
         }
-        writer.write_u16::<BigEndian>(self.address.port())?;
+        writer.write_u16::<BigEndian>(self.port)?;
 
         // write metadata
         writer.write_u16::<BigEndian>(self.metadata.len() as u16)?;

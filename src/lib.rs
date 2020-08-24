@@ -9,7 +9,7 @@ use topology::{Topology, TopologyBuilder};
 
 use std::collections::HashMap;
 use std::error::Error;
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -26,7 +26,7 @@ pub struct Swarm<T: 'static + Topology + Sync + Send> {
 }
 
 impl<T: 'static + Topology + Sync + Send> Swarm<T> {
-    pub fn new(id: u32, address: SocketAddr,
+    pub fn new(id: u32, ip_address: IpAddr, port: u16,
             seed_address: Option<SocketAddr>,
             topology_builder: impl TopologyBuilder<T>)
             -> (Swarm<T>, Arc<T>) {
@@ -34,7 +34,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         let nodes = Arc::new(RwLock::new(HashMap::new()));
         {
             let mut nodes = nodes.write().unwrap();
-            nodes.insert(id, Node::new(id, address));
+            nodes.insert(id, Node::new(id, ip_address, port));
         }
 
         // initialize topology
@@ -43,7 +43,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
 
         // initialize swarm
         let swarm = Swarm {
-            address, 
+            address: SocketAddr::new(ip_address, port), 
             id,
             join_handles: Vec::new(),
             nodes,

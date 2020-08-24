@@ -40,7 +40,7 @@ pub struct Dht {
 }
 
 impl Dht {
-    pub fn get(&self, token: u64) -> Option<Node> {
+    pub fn locate(&self, token: u64) -> Option<Node> {
         let tokens = self.tokens.read().unwrap();
 
         // find smallest token that is larger than search token
@@ -60,6 +60,11 @@ impl Dht {
         }
 
         None
+    }
+
+    pub fn nodes(&self) -> Vec<Node> {
+        let nodes = self.nodes.read().unwrap();
+        nodes.values().map(|x| x.clone()).collect()
     }
 }
 
