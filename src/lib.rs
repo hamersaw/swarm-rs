@@ -30,7 +30,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
             seed_address: Option<SocketAddr>,
             topology_builder: impl TopologyBuilder<T>)
             -> (Swarm<T>, Arc<T>) {
-        info!("initializing swarm [id: {}, address={}:{}, seed_addr={:?}]",
+        info!("initializing swarm [id={}, address={}:{}, seed_addr={:?}]",
             id, ip_address, port, seed_address);
 
         // initialize nodes
