@@ -30,6 +30,9 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
             seed_address: Option<SocketAddr>,
             topology_builder: impl TopologyBuilder<T>)
             -> (Swarm<T>, Arc<T>) {
+        info!("initializing swarm with addr={}:{} seed_addr={:?}",
+            ip_address, port, seed_address);
+
         // initialize nodes
         let nodes = Arc::new(RwLock::new(HashMap::new()));
         {
