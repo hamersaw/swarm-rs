@@ -30,8 +30,8 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
             seed_address: Option<SocketAddr>,
             topology_builder: impl TopologyBuilder<T>)
             -> (Swarm<T>, Arc<T>) {
-        info!("initializing swarm with addr={}:{} seed_addr={:?}",
-            ip_address, port, seed_address);
+        info!("initializing swarm [id: {}, address={}:{}, seed_addr={:?}]",
+            id, ip_address, port, seed_address);
 
         // initialize nodes
         let nodes = Arc::new(RwLock::new(HashMap::new()));
@@ -59,6 +59,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
     }
 
     pub fn set_metadata(&mut self, key: &str, value: &str) {
+        debug!("setting metadata [key={}, value={}]", key, value);
         let mut nodes = self.nodes.write().unwrap();
         let node = nodes.get_mut(&self.id).unwrap();
         node.set_metadata(key, value);
@@ -66,15 +67,18 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
 
     pub fn start(&mut self, thread_count: u8, thread_sleep_ms: u64,
             gossip_interval_ms: u64) -> Result<(), Box<dyn Error>> {
+        info!("starting [thread_count={}, thread_sleep_ms={}, gossip_interval_ms={}]", 
+            thread_count, thread_sleep_ms, gossip_interval_ms);
+
         // set shutdown false
         self.shutdown.store(false, Ordering::Relaxed);
 
         // start TcpListener 
-        info!("opening tcp listener on '{}'", self.address);
+        debug!("opening tcp listener [address={}]", self.address);
         let listener = TcpListener::bind(self.address)?;
 
         // start gossip listening threads
-        info!("starting {} gossip listener threads", thread_count);
+        debug!("starting gossip listeners [thread_count={}]", thread_count);
         for _ in 0..thread_count {
             // clone gossip reply variables
             let listener_clone = listener.try_clone()?;
@@ -103,7 +107,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         let topology_clone = self.topology.clone();
 
         // start gossip request thread
-        info!("starting gossiper thread");
+        debug!("starting gossiper thread");
         let join_handle = thread::spawn(move || {
             if let Err(e) = gossiper(gossip_interval, id,
                     seed_address, shutdown_clone, topology_clone) {
@@ -118,13 +122,14 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
     }
 
     pub fn stop(&mut self) -> Result<(), Box<dyn Error>> {
+        info!("stopping swarm");
+
         // check if already shutdown
         if self.shutdown.load(Ordering::Relaxed) {
             return Ok(());
         }
 
         // perform shutdown
-        info!("stopping swarm");
         self.shutdown.store(true, Ordering::Relaxed);
 
         // join threads
@@ -204,8 +209,6 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
             Some(socket_addr) => socket_addr,
             None => continue,
         };
-
-        trace!("gossiping address {}", socket_addr);
 
         // connect to SocketAddr
         let mut stream = match TcpStream::connect(&socket_addr) {

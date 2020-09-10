@@ -26,7 +26,7 @@ impl TopologyBuilder<Dht> for DhtBuilder {
         // initialize tokens
         let mut tokens = BTreeMap::new();
         for token in self.tokens.iter() {
-            debug!("registering token {} for node {}", token, id);
+            debug!("registering token [token={}, id={}]", token, id);
             tokens.insert(*token, id);
         }
 
@@ -115,8 +115,8 @@ impl Topology for Dht {
 
             let mut nodes = self.nodes.write().unwrap();
             if !nodes.contains_key(&node.get_id()) {
-                debug!("registering node {} {}:{}", node.get_id(),
-                    node.get_ip_address(), node.get_port());
+                debug!("registering node [id={}, address={}]",
+                    node.get_id(), node.get_address());
             }
             nodes.insert(node.get_id(), node);
         }
@@ -129,8 +129,8 @@ impl Topology for Dht {
 
             let mut tokens = self.tokens.write().unwrap();
             if !tokens.contains_key(&token) {
+                debug!("registering token [token={}, id={}]", token, id);
                 tokens.insert(token, id);
-                debug!("registering token {} for node {}", token, id);
             }
         }
 
@@ -175,8 +175,8 @@ impl Topology for Dht {
             // add gossiping node to nodes if does not exist
             let mut nodes = self.nodes.write().unwrap();
             if !nodes.contains_key(&node.get_id()) {
-                debug!("registering node {} {}:{}", node.get_id(),
-                    node.get_ip_address(), node.get_port());
+                debug!("registering node [id={}, address={}]",
+                    node.get_id(), node.get_address());
             }
             nodes.insert(node.get_id(), node);
         }

@@ -71,8 +71,8 @@ impl Topology for Cluster {
 
             let mut nodes = self.nodes.write().unwrap();
             if !nodes.contains_key(&node.get_id()) {
-                debug!("registering node {} {}:{}", node.get_id(),
-                    node.get_ip_address(), node.get_port());
+                debug!("registering node [id={}, address={}]",
+                    node.get_id(), node.get_address());
             }
             nodes.insert(node.get_id(), node);
         }
@@ -103,8 +103,8 @@ impl Topology for Cluster {
             // add gossiping node to nodes if does not exist
             let mut nodes = self.nodes.write().unwrap();
             if !nodes.contains_key(&node.get_id()) {
-                debug!("registering node {} {}:{}", node.get_id(),
-                    node.get_ip_address(), node.get_port());
+                debug!("registering node [id={}, address={}]",
+                    node.get_id(), node.get_address());
             }
             nodes.insert(node.get_id(), node);
         }
