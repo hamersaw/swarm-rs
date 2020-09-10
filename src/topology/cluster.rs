@@ -70,6 +70,10 @@ impl Topology for Cluster {
             let node = Node::read(stream)?;
 
             let mut nodes = self.nodes.write().unwrap();
+            if !nodes.contains_key(&node.get_id()) {
+                debug!("registering node {} {}:{}", node.get_id(),
+                    node.get_ip_address(), node.get_port());
+            }
             nodes.insert(node.get_id(), node);
         }
 
@@ -98,6 +102,10 @@ impl Topology for Cluster {
         {
             // add gossiping node to nodes if does not exist
             let mut nodes = self.nodes.write().unwrap();
+            if !nodes.contains_key(&node.get_id()) {
+                debug!("registering node {} {}:{}", node.get_id(),
+                    node.get_ip_address(), node.get_port());
+            }
             nodes.insert(node.get_id(), node);
         }
 

@@ -67,9 +67,11 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         self.shutdown.store(false, Ordering::Relaxed);
 
         // start TcpListener 
+        info!("opening tcp listener on '{}'", self.address);
         let listener = TcpListener::bind(self.address)?;
 
         // start gossip listening threads
+        info!("starting {} gossip listener threads", thread_count);
         for _ in 0..thread_count {
             // clone gossip reply variables
             let listener_clone = listener.try_clone()?;
@@ -98,6 +100,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         let topology_clone = self.topology.clone();
 
         // start gossip request thread
+        info!("starting gossiper thread");
         let join_handle = thread::spawn(move || {
             if let Err(e) = gossiper(gossip_interval, id,
                     seed_address, shutdown_clone, topology_clone) {
@@ -118,7 +121,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         }
 
         // perform shutdown
-        debug!("stopping swarm");
+        info!("stopping swarm");
         self.shutdown.store(true, Ordering::Relaxed);
 
         // join threads
@@ -198,6 +201,8 @@ fn gossiper<T: 'static + Topology + Sync + Send>(
             Some(socket_addr) => socket_addr,
             None => continue,
         };
+
+        trace!("gossiping address {}", socket_addr);
 
         // connect to SocketAddr
         let mut stream = match TcpStream::connect(&socket_addr) {
