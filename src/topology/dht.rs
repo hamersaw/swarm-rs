@@ -65,7 +65,7 @@ impl Dht {
 
     pub fn nodes(&self) -> Vec<Node> {
         let nodes = self.nodes.read().unwrap();
-        nodes.values().map(|x| x.clone()).collect()
+        nodes.values().cloned().collect()
     }
 }
 
@@ -79,13 +79,13 @@ impl Topology for Dht {
             for (node_id, node) in nodes.iter() {
                 match (node_id, index) {
                     (x, _) if x == &id => {},
-                    (_, 0) => return Some(node.get_address().clone()),
+                    (_, 0) => return Some(node.get_address()),
                     _ => index -= 1,
                 }
             }
         } else if let Some(seed_address) = seed_address {
             // if no other registered nodes -> return seed node
-            return Some(seed_address.clone());
+            return Some(*seed_address);
         }
 
         None
@@ -206,12 +206,11 @@ mod tests {
             vec!(0, 6148914691236516864, 12297829382473033728));
 
 	// initialize swarm
-        let address = "127.0.0.1:12000".parse()
-            .expect("parse seed addr");
+        let ip_address = "127.0.0.1".parse().expect("parse ip addr");
         let (_swarm, dht) =
-            Swarm::new(0, address, None, dht_builder);
+            Swarm::new(0, ip_address, 14000, None, dht_builder);
 
-        let result = dht.get(15605);
+        let result = dht.locate(15605);
         assert!(result.is_some());
         assert_eq!(result.unwrap().get_id(), 0);
     }

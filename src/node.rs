@@ -89,11 +89,11 @@ impl Node {
         match self.ip_address {
             IpAddr::V4(ip_address_v4) => {
                 writer.write_u8(4)?;
-                writer.write(&ip_address_v4.octets())?;
+                writer.write_all(&ip_address_v4.octets())?;
             },
             IpAddr::V6(ip_address_v6) => {
                 writer.write_u8(6)?;
-                writer.write(&ip_address_v6.octets())?;
+                writer.write_all(&ip_address_v6.octets())?;
             },
         }
         writer.write_u16::<BigEndian>(self.port)?;
@@ -133,6 +133,6 @@ pub fn read_string(reader: &mut impl Read)
 pub fn write_string(value: &str, writer: &mut impl Write)
         -> Result<(), Box<dyn Error>> {
     writer.write_u8(value.len() as u8)?;
-    writer.write(value.as_bytes())?;
+    writer.write_all(value.as_bytes())?;
     Ok(())
 }

@@ -102,7 +102,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         // clone gossip request variables
         let gossip_interval = Duration::from_millis(gossip_interval_ms);
         let id = self.id;
-        let seed_address = self.seed_address.clone();
+        let seed_address = self.seed_address;
         let shutdown_clone = self.shutdown.clone();
         let topology_clone = self.topology.clone();
 
@@ -133,7 +133,7 @@ impl<T: 'static + Topology + Sync + Send> Swarm<T> {
         self.shutdown.store(true, Ordering::Relaxed);
 
         // join threads
-        while self.join_handles.len() != 0 {
+        while !self.join_handles.is_empty() {
             let join_handle = self.join_handles.pop().unwrap();
             if let Err(e) = join_handle.join() {
                 warn!("join thread failure: {:?}", e);
@@ -243,10 +243,9 @@ mod tests {
         let cluster_builder = ClusterBuilder::new();
 
 	// initialize swarm
-        let address = "127.0.0.1:12000".parse()
-            .expect("parse address");
+        let ip_address = "127.0.0.1".parse().expect("parse ip addr");
         let (mut swarm, _cluster) =
-            Swarm::new(0, address, None, cluster_builder);
+            Swarm::new(0, ip_address, 12000, None, cluster_builder);
 
 	// start swarm
 	swarm.start(2, 50, 2000).expect("swarm start");
@@ -269,10 +268,10 @@ mod tests {
             let cluster_builder = ClusterBuilder::new();
 
             // initialize swarm
-            let address = format!("127.0.0.1:{}", port + i).parse()
-                .expect("parse address");
-            let (mut swarm, dht) =
-                Swarm::new(i, address, seed_address, cluster_builder);
+            let ip_address = "127.0.0.1".parse()
+                .expect("parse ip addr");
+            let (mut swarm, _cluster) = Swarm::new(0, ip_address,
+                port + i, seed_address, cluster_builder);
 
             // start swarm
             swarm.start(2, 50, 75).expect("swarm start");

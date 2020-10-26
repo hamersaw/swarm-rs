@@ -11,9 +11,9 @@ use std::sync::{Arc, RwLock};
 pub struct ClusterBuilder {
 }
 
-impl ClusterBuilder {
-    pub fn new() -> ClusterBuilder {
-        ClusterBuilder { }
+impl Default for ClusterBuilder {
+    fn default() -> Self {
+        ClusterBuilder {}
     }
 }
 
@@ -38,13 +38,13 @@ impl Topology for Cluster {
             for (node_id, node) in nodes.iter() {
                 match (node_id, index) {
                     (x, _) if x == &id => {},
-                    (_, 0) => return Some(node.get_address().clone()),
+                    (_, 0) => return Some(node.get_address()),
                     _ => index -= 1,
                 }
             }
         } else if let Some(seed_address) = seed_address {
             // if no other registered nodes -> return seed node
-            return Some(seed_address.clone());
+            return Some(*seed_address);
         }
 
         None
